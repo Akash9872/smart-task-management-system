@@ -1,0 +1,22 @@
+﻿# Dependencies and build output
+**/node_modules/
+**/dist/
+**/build/
+**/target/
+/.m2/
+/maven-settings.xml
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+**/application-local.properties
+**/application-local.yml
+**/application-local.yaml
+
+# IDE and operating system files
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

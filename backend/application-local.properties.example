@@ -1,0 +1,6 @@
+# Copy this file to application-local.properties (the copied file is ignored by Git).
+# Replace the placeholders locally; never commit the copied file.
+spring.datasource.url=jdbc:mysql://localhost:3306/smart_task_db?createDatabaseIfNotExist=true&serverTimezone=UTC
+spring.datasource.username=your_mysql_username
+spring.datasource.password=your_mysql_password
+app.jwt.secret=replace-with-a-random-secret-of-at-least-32-bytes

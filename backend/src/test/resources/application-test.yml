@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:smarttask;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  sql:
+    init:
+      mode: never
+app:
+  jwt:
+    secret: test-only-secret-which-is-long-enough-for-hmac-sha256
+    expiration-minutes: 60
