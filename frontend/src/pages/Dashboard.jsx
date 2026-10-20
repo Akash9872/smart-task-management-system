@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
-import { Activity, ArrowDownUp, CalendarDays, Check, ChevronDown, CircleHelp, ClipboardList, Clock3, LayoutGrid, List, LogOut, Plus, Search, SlidersHorizontal, Sparkles, Target, X } from 'lucide-react'
+import { Activity, ArrowDownUp, CalendarDays, Check, ChevronDown, ClipboardList, Clock3, LayoutGrid, List, LogOut, Plus, Search, SlidersHorizontal, Sparkles, Target, X } from 'lucide-react'
 import { api, errorMessage } from '../api/client.js'
 import TaskCard from '../components/TaskCard.jsx'
 import TaskModal from '../components/TaskModal.jsx'
+import HelpModal from '../components/HelpModal.jsx'
+import { formatDuration } from '../utils/formatDuration.js'
 
 const columns = [
   { id:'TODO', title:'To do', tone:'todo', caption:'Ready when you are' },
@@ -11,12 +13,12 @@ const columns = [
   { id:'COMPLETED', title:'Completed', tone:'done', caption:'Look at you go' },
 ]
 
-function Column({ column, tasks, onEdit, onDelete, onAdd }) {
+function Column({ column, tasks, onEdit, onDelete, onAdd, getElapsed }) {
   const { setNodeRef, isOver } = useDroppable({ id:column.id })
   return <section ref={setNodeRef} className={`board-column column-${column.tone} ${isOver ? 'column-over' : ''}`}>
     <div className="column-heading"><div className="column-title"><span className={`column-marker marker-${column.tone}`} /><h3>{column.title}</h3><span className="column-count">{tasks.length}</span></div><button className="icon-button column-add" onClick={()=>onAdd(column.id)} aria-label={`Add to ${column.title}`}><Plus size={16}/></button></div>
     <p className="column-caption">{column.caption}</p>
-    <div className="column-cards">{tasks.map(task=><TaskCard key={task.id} task={task} onEdit={onEdit} onDelete={onDelete}/>)}
+    <div className="column-cards">{tasks.map(task=><TaskCard key={task.id} task={task} elapsedMs={getElapsed(task)} onEdit={onEdit} onDelete={onDelete}/>)}
       {tasks.length===0 && <div className="empty-column"><span><Sparkles size={16}/></span><p>Nothing here yet</p><small>Drop a task in, or enjoy the breathing room.</small></div>}
     </div>
   </section>
@@ -48,6 +50,12 @@ export default function Dashboard({ user, onSignOut }) {
   const [saving, setSaving] = useState(false)
   const [activeTask, setActiveTask] = useState(null)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const timerKey = `taskflow-timers:${user.id ?? user.email ?? 'user'}`
+  const [taskTimers, setTaskTimers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(timerKey) || '{}') } catch { return {} }
+  })
+  const [clockNow, setClockNow] = useState(Date.now())
   const sensors = useSensors(useSensor(PointerSensor,{activationConstraint:{distance:6}}))
 
   const loadTasks = useCallback(async () => {
@@ -61,13 +69,37 @@ export default function Dashboard({ user, onSignOut }) {
 
   useEffect(()=>{const timer=setTimeout(loadTasks,query?250:0);return()=>clearTimeout(timer)},[loadTasks,query])
   useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),2600);return()=>clearTimeout(timer)},[notice])
+  useEffect(()=>{const interval=setInterval(()=>setClockNow(Date.now()),1000);return()=>clearInterval(interval)},[])
+  useEffect(()=>{
+    if(!tasks.length)return
+    setTaskTimers(current=>{
+      const next={...current};let changed=false;const now=Date.now()
+      for(const task of tasks){
+        const previous=next[task.id]||{elapsedMs:0,startedAt:null}
+        if(task.status==='IN_PROGRESS'&&!previous.startedAt){next[task.id]={...previous,startedAt:now};changed=true}
+        else if(task.status!=='IN_PROGRESS'&&previous.startedAt){next[task.id]={elapsedMs:(previous.elapsedMs||0)+Math.max(0,now-previous.startedAt),startedAt:null};changed=true}
+      }
+      if(changed){try{localStorage.setItem(timerKey,JSON.stringify(next))}catch{}}
+      return changed?next:current
+    })
+  },[tasks,timerKey])
 
   const stats=useMemo(()=>({total:tasks.length,active:tasks.filter(t=>t.status==='IN_PROGRESS').length,completed:tasks.filter(t=>t.status==='COMPLETED').length}),[tasks])
+  function getElapsed(task){const timer=taskTimers[task.id];return(timer?.elapsedMs||0)+(task.status==='IN_PROGRESS'&&timer?.startedAt?Math.max(0,clockNow-timer.startedAt):0)}
+  function setTimerStatus(taskId,nextStatus){
+    setTaskTimers(current=>{
+      const previous=current[taskId]||{elapsedMs:0,startedAt:null};const now=Date.now();let next=previous
+      if(nextStatus==='IN_PROGRESS'&&!previous.startedAt)next={...previous,startedAt:now}
+      else if(nextStatus!=='IN_PROGRESS'&&previous.startedAt)next={elapsedMs:(previous.elapsedMs||0)+Math.max(0,now-previous.startedAt),startedAt:null}
+      if(next===previous)return current
+      const updated={...current,[taskId]:next};try{localStorage.setItem(timerKey,JSON.stringify(updated))}catch{};return updated
+    })
+  }
 
   async function saveTask(data) {
     setSaving(true);setModalError('')
     try {
-      if(modalTask?.id) await api.put(`/tasks/${modalTask.id}`,data); else await api.post('/tasks',data)
+      if(modalTask?.id){await api.put(`/tasks/${modalTask.id}`,data);setTimerStatus(modalTask.id,data.status)} else await api.post('/tasks',data)
       setModalTask(undefined);setNotice(modalTask?.id?'Task updated':'Task created');await loadTasks()
     } catch(requestError){setModalError(errorMessage(requestError))}
     finally{setSaving(false)}
@@ -77,7 +109,7 @@ export default function Dashboard({ user, onSignOut }) {
     try{await api.delete(`/tasks/${task.id}`);setNotice('Task deleted');await loadTasks()}catch(requestError){setError(errorMessage(requestError))}
   }
   async function changeStatus(task,statusValue) {
-    try{await api.put(`/tasks/${task.id}`,{title:task.title,description:task.description,status:statusValue,priority:task.priority,deadline:task.deadline});setNotice('Task moved');await loadTasks()}
+    try{await api.put(`/tasks/${task.id}`,{title:task.title,description:task.description,status:statusValue,priority:task.priority,deadline:task.deadline});setTimerStatus(task.id,statusValue);setNotice('Task moved');await loadTasks()}
     catch(requestError){setError(errorMessage(requestError))}
   }
   function handleDragStart(event){setActiveTask(tasks.find(task=>task.id===event.active.id)||null)}
@@ -110,7 +142,7 @@ export default function Dashboard({ user, onSignOut }) {
     <aside className="sidebar"><div className="brand"><span className="brand-mark"><ClipboardList size={18}/></span><span>taskflow<span className="brand-dot">.</span></span></div>
       <div className="workspace-label">WORKSPACE</div><div className="workspace-card"><span className="workspace-avatar">{user.name?.charAt(0)?.toUpperCase()||'T'}</span><span><strong>My workspace</strong><small>Personal space</small></span><ChevronDown size={15}/></div>
       <div className="nav-label">MENU</div><nav className="side-nav"><button className={`nav-item ${!dueOnly&&view==='board'&&!status&&!priority&&!query?'active':''}`} onClick={()=>{clearFilters();setView('board');setFilterOpen(false)}}><LayoutGrid size={17}/>Overview</button><button className={`nav-item ${view==='list'&&!dueOnly?'active':''}`} onClick={()=>showTasks()}><List size={17}/>All tasks<span className="nav-count">{stats.total}</span></button><button className={`nav-item ${dueOnly?'active':''}`} onClick={()=>showTasks({due:true})}><CalendarDays size={17}/>Due dates</button></nav>
-      <div className="sidebar-bottom"><div className="sidebar-tip"><span><Sparkles size={15}/></span><strong>A small tip</strong><p>Break a big goal into one tiny next step.</p></div><a className="nav-item nav-item-link" href="https://github.com/Akash9872/smart-task-management-system/issues" target="_blank" rel="noreferrer"><CircleHelp size={17}/>Help & feedback</a><div className="profile-card"><div className="profile-avatar">{user.name?.charAt(0)?.toUpperCase()||'T'}</div><div className="profile-info"><strong>{user.name}</strong><small>{user.role==='ADMIN'?'Administrator':user.email}</small></div><button className="icon-button" onClick={onSignOut} aria-label="Sign out" title="Sign out"><LogOut size={16}/></button></div></div>
+      <div className="sidebar-bottom"><div className="sidebar-tip"><span><Sparkles size={15}/></span><strong>A small tip</strong><p>Break a big goal into one tiny next step.</p></div><button className="nav-item nav-item-link" onClick={()=>setHelpOpen(true)}><ClipboardList size={17}/>Help & feedback</button><div className="profile-card"><div className="profile-avatar">{user.name?.charAt(0)?.toUpperCase()||'T'}</div><div className="profile-info"><strong>{user.name}</strong><small>{user.role==='ADMIN'?'Administrator':user.email}</small></div><button className="icon-button" onClick={onSignOut} aria-label="Sign out" title="Sign out"><LogOut size={16}/></button></div></div>
     </aside>
     <main className="main-area"><header className="topbar"><div className="breadcrumbs"><span>Workspace</span><span className="crumb-separator">/</span><strong>{overviewTitle}</strong></div><div className="topbar-right"><span className="today-pill"><span className="online-dot"/>{today}</span><div className="profile-avatar top-avatar" aria-label={user.name} title={user.name}>{user.name?.charAt(0)?.toUpperCase()}</div></div></header>
       <div className="page-content"><section className="welcome-row"><div><div className="welcome-kicker"><span className="kicker-spark"><Sparkles size={13}/></span> YOUR PERSONAL WORKSPACE</div><h1>Good day, {name}<span className="wave">✳</span></h1><p>A clear view of your work, and the space to do it well.</p></div><button className="button button-primary create-button" onClick={()=>{setModalError('');setModalTask(null)}}><Plus size={17}/>New task</button></section>
@@ -123,13 +155,14 @@ export default function Dashboard({ user, onSignOut }) {
               <button className="button button-outline sort-button" onClick={()=>setDirection(direction==='asc'?'desc':'asc')} title={`Sort ${direction==='asc'?'descending':'ascending'}`}><ArrowDownUp size={15}/><span>{direction==='asc'?'Oldest':'Newest'}</span></button><select className="sort-select" value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort tasks"><option value="createdAt">Created date</option><option value="deadline">Deadline</option><option value="priority">Priority</option><option value="title">Name</option><option value="updatedAt">Last updated</option></select></div>
           </div>
           {error&&<div className="page-error" role="alert">{error}<button onClick={loadTasks}>Retry</button></div>}
-          {loading?<div className="loading-state"><span className="spinner"/>Loading your tasks…</div>:visibleTasks.length===0?<div className="empty-state"><span className="empty-illustration"><ClipboardList size={25}/></span><h3>{hasFilters?(dueOnly?'No tasks have deadlines yet':'No tasks match those filters'):'A fresh start'}</h3><p>{hasFilters?'Clear or adjust the current view to see more tasks.':'Add a task when something is ready to be on your mind.'}</p>{hasFilters&&<button className="button button-outline" onClick={clearFilters}>Clear filters</button>}{!hasFilters&&<button className="button button-primary" onClick={()=>{setModalError('');setModalTask(null)}}><Plus size={16}/>Create your first task</button>}</div>:view==='board'?<DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={()=>setActiveTask(null)}><div className="board-grid">{columns.map(column=><Column key={column.id} column={column} tasks={tasks.filter(task=>task.status===column.id)} onEdit={task=>{setModalError('');setModalTask(task)}} onDelete={removeTask} onAdd={status=>{setModalError('');setModalTask({status})}}/>)}</div><DragOverlay>{activeTask?<TaskCard task={activeTask} onEdit={()=>{}} onDelete={()=>{}} isDragging/>:null}</DragOverlay></DndContext>:<div className="list-view">{visibleTasks.map(task=><div className="list-row" key={task.id}><span className={`list-status status-${task.status.toLowerCase()}`}/><div className="list-title"><strong>{task.title}</strong><small>{task.description||'No description'}</small></div><span className={`list-priority priority-text-${task.priority.toLowerCase()}`}>{task.priority}</span><span className="list-deadline">{task.deadline?new Date(`${task.deadline}T00:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'—'}</span><button className="icon-button" onClick={()=>{setModalError('');setModalTask(task)}} aria-label="Edit task">•••</button></div>)}</div>}
+          {loading?<div className="loading-state"><span className="spinner"/>Loading your tasks…</div>:visibleTasks.length===0?<div className="empty-state"><span className="empty-illustration"><ClipboardList size={25}/></span><h3>{hasFilters?(dueOnly?'No tasks have deadlines yet':'No tasks match those filters'):'A fresh start'}</h3><p>{hasFilters?'Clear or adjust the current view to see more tasks.':'Add a task when something is ready to be on your mind.'}</p>{hasFilters&&<button className="button button-outline" onClick={clearFilters}>Clear filters</button>}{!hasFilters&&<button className="button button-primary" onClick={()=>{setModalError('');setModalTask(null)}}><Plus size={16}/>Create your first task</button>}</div>:view==='board'?<DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={()=>setActiveTask(null)}><div className="board-grid">{columns.map(column=><Column key={column.id} column={column} tasks={tasks.filter(task=>task.status===column.id)} getElapsed={getElapsed} onEdit={task=>{setModalError('');setModalTask(task)}} onDelete={removeTask} onAdd={status=>{setModalError('');setModalTask({status})}}/>)}</div><DragOverlay>{activeTask?<TaskCard task={activeTask} elapsedMs={getElapsed(activeTask)} onEdit={()=>{}} onDelete={()=>{}} isDragging/>:null}</DragOverlay></DndContext>:<div className="list-view">{visibleTasks.map(task=><div className="list-row" key={task.id}><span className={`list-status status-${task.status.toLowerCase()}`}/><div className="list-title"><strong>{task.title}</strong><small>{task.description||'No description'}</small></div>{task.status==='IN_PROGRESS'&&<span className="list-stopwatch"><Clock3 size={13}/>{formatDuration(getElapsed(task))}</span>}<span className={`list-priority priority-text-${task.priority.toLowerCase()}`}>{task.priority}</span><span className="list-deadline">{task.deadline?new Date(`${task.deadline}T00:00:00`).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'—'}</span><button className="icon-button" onClick={()=>{setModalError('');setModalTask(task)}} aria-label="Edit task">•••</button></div>)}</div>}
           <div className="workspace-foot"><span>Showing {visibleTasks.length} {visibleTasks.length===1?'task':'tasks'}</span><span><span className="footer-status-dot"/> Synced just now</span></div>
         </section>
         <footer className="page-footer"><span>One thing at a time. You’re doing fine.</span><span>MADE FOR A MORE FOCUSED DAY <span className="footer-spark">✳</span></span></footer>
       </div>
     </main>
     {modalTask!==undefined&&<TaskModal task={modalTask?.id?modalTask:null} initialStatus={modalTask?.status} onClose={()=>setModalTask(undefined)} onSave={saveTask} saving={saving} error={modalError}/>}
+    {helpOpen&&<HelpModal onClose={()=>setHelpOpen(false)}/>}
     {notice&&<div className="toast"><Check size={16}/>{notice}</div>}
   </div>
 }

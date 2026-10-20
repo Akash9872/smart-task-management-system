@@ -87,6 +87,10 @@ When the backend is running, open [Swagger UI](http://localhost:8080/swagger-ui.
 
 See [docs/API.md](docs/API.md) for routes, request fields, and query parameters.
 
+## Deploy online
+
+See [docs/DEPLOY-VERCEL.md](docs/DEPLOY-VERCEL.md) for separate Vercel projects for the frontend and Spring Boot API, plus an external MySQL-compatible database.
+
 ## Tests and build verification
 
 Backend integration tests run against an isolated in-memory H2 database and do not replace MySQL in normal application runs:

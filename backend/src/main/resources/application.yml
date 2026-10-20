@@ -17,7 +17,7 @@ spring:
   jackson:
     default-property-inclusion: non_null
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8080}}
   error:
     include-message: never
 management:
@@ -37,7 +37,7 @@ app:
     secret: ${APP_JWT_SECRET}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}
   cors:
-    allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:5173}
+    allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:5173,http://127.0.0.1:5173}
 # Keep request bodies, credentials, and bearer tokens out of normal logs.
 logging:
   level:

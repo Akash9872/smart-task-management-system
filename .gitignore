@@ -17,6 +17,7 @@
 # IDE and operating system files
 .vscode/
 .idea/
+.vercel/
 *.iml
 .DS_Store
 Thumbs.db
