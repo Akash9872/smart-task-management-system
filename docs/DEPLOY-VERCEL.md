@@ -14,15 +14,20 @@ Keep all database credentials and the JWT secret out of frontend `VITE_` variabl
 
 ## 3. Deploy the API
 
-Create a Vercel project from the repository and set **Root Directory** to `backend`. Vercel builds `Dockerfile.vercel` as the API container. Connect your TiDB Cloud resource to this backend project. The application reads TiDB's `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, and `TIDB_DATABASE` variables directly. If your database provider uses different variable names, add the equivalent `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` variables listed below. Explicit `DB_*` variables take precedence.
+Create a Vercel project from the repository and set **Root Directory** to `backend`. Vercel builds `Dockerfile.vercel` as the API container. Connect your TiDB Cloud resource to this backend project. The application accepts `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD`; it also reads TiDB's `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, and `TIDB_DATABASE` (or `TIDB_DB_NAME`) variables. Explicit `DB_*` variables take precedence.
 
 | Variable | Value |
 | --- | --- |
-| `DB_URL` | Optional override: `jdbc:mysql://<host>:<port>/<database>?sslMode=VERIFY_IDENTITY&serverTimezone=UTC` |
-| `DB_USERNAME` | Optional override for the provider's database username |
-| `DB_PASSWORD` | Optional override for the provider's database password |
+| `DB_HOST` | TiDB host from the cluster's **Connect** panel |
+| `DB_PORT` | `4000` for TiDB Cloud |
+| `DB_NAME` | Application database name (create one; do not use `sys`) |
+| `DB_USERNAME` | TiDB username from the **Connect** panel |
+| `DB_PASSWORD` | TiDB password |
+| `DB_URL` | Optional full JDBC URL override; SSL identity verification is enabled by default |
 | `APP_JWT_SECRET` | A newly generated random secret of at least 32 bytes |
 | `CORS_ALLOWED_ORIGIN` | `https://smart-task-management-system-six.vercel.app` |
+
+TiDB Cloud Starter/Essential certificates are issued by a public CA trusted by Java's default trust store, so the JDBC URL uses `sslMode=VERIFY_IDENTITY` without a separately downloaded certificate. For other TiDB plans, use that plan's CA instructions and configure a Java trust store if required.
 
 Deploy the API and note its generated URL, for example `https://<your-api-project>.vercel.app`.
 
