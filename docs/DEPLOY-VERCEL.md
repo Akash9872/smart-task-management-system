@@ -14,15 +14,15 @@ Keep all database credentials and the JWT secret out of frontend `VITE_` variabl
 
 ## 3. Deploy the API
 
-Create a Vercel project from the repository and set **Root Directory** to `backend`. Vercel builds `Dockerfile.vercel` as the API container. Add these environment variables to the API project, using the values provided by your database service:
+Create a Vercel project from the repository and set **Root Directory** to `backend`. Vercel builds `Dockerfile.vercel` as the API container. Connect your TiDB Cloud resource to this backend project. The application reads TiDB's `TIDB_HOST`, `TIDB_PORT`, `TIDB_USER`, `TIDB_PASSWORD`, and `TIDB_DATABASE` variables directly. If your database provider uses different variable names, add the equivalent `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` variables listed below. Explicit `DB_*` variables take precedence.
 
 | Variable | Value |
 | --- | --- |
-| `DB_URL` | `jdbc:mysql://<host>:<port>/<database>?sslMode=VERIFY_IDENTITY&serverTimezone=UTC` |
-| `DB_USERNAME` | Database username from your provider |
-| `DB_PASSWORD` | Database password from your provider |
+| `DB_URL` | Optional override: `jdbc:mysql://<host>:<port>/<database>?sslMode=VERIFY_IDENTITY&serverTimezone=UTC` |
+| `DB_USERNAME` | Optional override for the provider's database username |
+| `DB_PASSWORD` | Optional override for the provider's database password |
 | `APP_JWT_SECRET` | A newly generated random secret of at least 32 bytes |
-| `CORS_ALLOWED_ORIGIN` | Temporary `http://localhost:5173`; update after creating the frontend project |
+| `CORS_ALLOWED_ORIGIN` | `https://smart-task-management-system-six.vercel.app` |
 
 Deploy the API and note its generated URL, for example `https://<your-api-project>.vercel.app`.
 
